@@ -1,8 +1,10 @@
 // Buzzkill hardware bring-up test: OLED display + PAM8904 amp/speaker
+// + 25-LED NeoPixel light strip (via AudioVisual)
 //
 // Wiring:
 //   OLED (SSD1306, I2C)  SCL -> GPIO6, SDA -> GPIO7
 //   PAM8904 amplifier    IN  -> GPIO4 (square-wave tone input)
+//   NeoPixel light strip DIN -> GPIO3 (LIGHT_STRIP_PIN in AudioVisual.cpp)
 //
 // The PAM8904 is a piezo sounder driver, not a linear audio amp: it's
 // driven with a digital square wave at the desired tone frequency
@@ -17,6 +19,7 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include "AudioVisual.h"
 
 // --- Pin wiring ---
 constexpr int PIN_OLED_SDA = 7;
@@ -92,9 +95,33 @@ void setup() {
         Serial.println("ledcAttach FAILED on amp pin");
     }
     ledcWriteTone(PIN_AMP_IN, 0); // stay silent until the loop starts
+
+    // --- Light strip init ---
+    AudioVisual::init();
+}
+
+// Lights each strip LED in turn (red, green, blue) to check every pixel
+// and the GRB color order.
+void stripChaseTest() {
+    const uint8_t colors[][3] = {{255, 0, 0}, {0, 255, 0}, {0, 0, 255}};
+    const char *names[] = {"red", "green", "blue"};
+    for (int c = 0; c < 3; c++) {
+        Serial.printf("Strip chase: %s\n", names[c]);
+        showOledStatus("Strip: chase", names[c]);
+        for (int i = 0; i < AudioVisual::NUM_STRIP_LEDS; i++) {
+            AudioVisual::clearLightStrip();
+            AudioVisual::setStripPixel(i, colors[c][0], colors[c][1], colors[c][2]);
+            delay(100);
+        }
+    }
+    AudioVisual::clearLightStrip();
 }
 
 void loop() {
+    stripChaseTest();
+
+    // Rainbow light show stays on for the whole tone sweep.
+    AudioVisual::playBackgroundMusic();
     for (int i = 0; i < numTestTones; i++) {
         int freq = testTones[i];
         Serial.printf("Playing %d Hz through PAM8904\n", freq);
@@ -105,6 +132,7 @@ void loop() {
         ledcWriteTone(PIN_AMP_IN, 0);
         delay(150);
     }
+    AudioVisual::stopBackgroundMusic();
 
     showOledStatus("Sweep complete", "Repeating...");
     delay(1000);
