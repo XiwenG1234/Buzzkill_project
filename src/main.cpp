@@ -37,6 +37,11 @@ void runLineFollowing();
 // to Motion / AudioVisual.
 void runManualControl();
 
+// Demo: cycles left -> right -> forward -> backward -> stop every 1.5 s
+// through Motion (which shows the matching arrow). Used while DEMO_MODE is
+// on, until line following / BLE control are implemented.
+void runDirectionDemo();
+
 } // namespace Control
 
 // --- Motion subsystem (stubs) ---
@@ -78,12 +83,21 @@ void sendStatus(const String &status);
 
 void setup() {
     Serial.begin(115200);
+    // Don't block when no serial monitor is reading: otherwise every print
+    // stalls loop() ~100 ms once the USB buffer fills, slowing the music.
+    Serial.setTxTimeoutMs(0);
+    delay(300);
+    Serial.println("\nBuzzkill starting");
 
     Sensing::init();
     AudioVisual::init();
     Motion::init();
     Wireless::init();
     Control::init();
+
+    // Loops forever in the background (serviced by AudioVisual::update()).
+    Serial.println("Playing background music (looping)");
+    AudioVisual::playBackgroundMusic();
 }
 
 void loop() {
@@ -92,6 +106,7 @@ void loop() {
     Control::update();
     Motion::update();
     AudioVisual::update();
+    // No delay() in loop() - it would stall the background music.
 }
 
 // --- Control implementation (stubs) ---
@@ -100,11 +115,20 @@ namespace Control {
 
 static Mode currentMode = Mode::AUTO_LINE_FOLLOW;
 
+// true: ignore the mode and run runDirectionDemo(). Set to false once line
+// following / manual control are implemented.
+constexpr bool DEMO_MODE = true;
+
 void init() {
     // TODO: initialize control/state-machine state
 }
 
 void update() {
+    if (DEMO_MODE) {
+        runDirectionDemo();
+        return;
+    }
+
     // TODO: check Wireless for mode-switch commands, then dispatch:
     if (currentMode == Mode::AUTO_LINE_FOLLOW) {
         runLineFollowing();
@@ -130,6 +154,47 @@ void runManualControl() {
     // TODO: apply latest Wireless command to Motion / AudioVisual
 }
 
+void runDirectionDemo() {
+    // Stage: 0 = left, 1 = right, 2 = forward, 3 = backward, 4 = stop.
+    static int stage = 0;
+    static unsigned long lastStageMs = 0;
+    constexpr unsigned long STAGE_MS = 1500; // time per stage
+    constexpr int DEMO_SPEED = 150;          // placeholder motor speed
+
+    if (lastStageMs != 0 && millis() - lastStageMs < STAGE_MS) {
+        return;
+    }
+    lastStageMs = millis();
+
+    const char *name = "";
+    switch (stage) {
+        case 0:
+            name = "Left";
+            Motion::turnLeft(DEMO_SPEED);
+            break;
+        case 1:
+            name = "Right";
+            Motion::turnRight(DEMO_SPEED);
+            break;
+        case 2:
+            name = "Forward";
+            Motion::moveForward(DEMO_SPEED);
+            break;
+        case 3:
+            name = "Backward";
+            Motion::moveBackward(DEMO_SPEED);
+            break;
+        case 4:
+            name = "Stop";
+            Motion::stop();
+            break;
+    }
+    Serial.printf("Stage %d: %s\n", stage, name);
+    AudioVisual::showOledStatus("Stage " + String(stage), name);
+
+    stage = (stage + 1) % 5; // 0 -> 1 -> 2 -> 3 -> 4 -> 0 ...
+}
+
 } // namespace Control
 
 // --- Motion implementation (stubs) ---
@@ -145,6 +210,7 @@ void update() {
 }
 
 void stop() {
+    AudioVisual::showStopSign();
     // TODO: implement stop
 }
 
@@ -153,18 +219,22 @@ void setMotorSpeeds(int leftSpeed, int rightSpeed) {
 }
 
 void moveForward(int speed) {
+    AudioVisual::showForwardArrow();
     // TODO: implement forward movement
 }
 
 void moveBackward(int speed) {
+    AudioVisual::showBackwardArrow();
     // TODO: implement backward movement
 }
 
 void turnLeft(int speed) {
+    AudioVisual::showLeftArrow();
     // TODO: implement left turn
 }
 
 void turnRight(int speed) {
+    AudioVisual::showRightArrow();
     // TODO: implement right turn
 }
 
