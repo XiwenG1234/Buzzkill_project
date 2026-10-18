@@ -66,31 +66,22 @@ bool oledReady = false;
 unsigned long lastOledProbeMs = 0;
 constexpr unsigned long OLED_RETRY_MS = 2000; // re-probe a missing OLED this often
 
-// --- Speaker amp ---
-// The PAM8904 is a piezo sounder driver, not a linear audio amp: it's
-// driven with a digital square wave at the desired tone frequency
-// (via LEDC/PWM), and it boosts + drives the piezo speaker differentially.
-// If SHDN/gain-select pins are wired to GPIOs rather than hardwired,
-// they'll need to be set separately (SHDN driven active to enable output).
-constexpr int AMP_PWM_RESOLUTION = 8; // bits; 50% duty via ledcWriteTone gives a clean square wave
+constexpr int AMP_PWM_RESOLUTION = 8; // bits; 
 constexpr int AMP_INIT_FREQ_HZ = 1000;
 
 // Tones swept by runToneSweepTest() (Hz).
 const int testTones[] = {262, 330, 392, 440, 523, 880, 1047};
 
-// Note frequencies (Hz) for playNote(): index 1-7 = do re mi fa sol la ti
-// (C major, C5 octave); index 0 = rest.
+// Note frequencies (Hz): index 1-7 = do re mi fa sol la ti
 const int NOTE_HZ[] = {0, 523, 587, 659, 698, 784, 880, 988};
 
-// Frequency for a numbered note: 1-7 = C5 octave, -1 to -7 = C4 octave
-// (half the frequency), anything else = rest (0).
 int noteToHz(int note) {
     if (note >= 1 && note <= 7) return NOTE_HZ[note];
     if (note <= -1 && note >= -7) return NOTE_HZ[-note] / 2;
     return 0;
 }
 
-// Background music: Ode to Joy (Beethoven) in C major.
+// Background music: Ode to Joy.
 // {note, length}: note 1-7 = do-ti, -5 = low sol, 0 = rest; length in
 // eighth notes (1 = eighth, 2 = quarter, 3 = dotted quarter, 4 = half).
 const int ODE_TO_JOY[][2] = {
@@ -110,8 +101,7 @@ const int ODE_TO_JOY[][2] = {
     {0, 4},
 };
 
-// Background music tempo: ms per eighth note (150 = 300 ms per beat);
-// smaller = faster, bigger = slower.
+// tempo: smaller = faster, bigger = slower.
 constexpr int BACKGROUND_EIGHTH_MS = 150;
 
 // --- Background melody state (serviced by update()) ---
@@ -156,7 +146,7 @@ void serviceMelody() {
     }
 
     // Next note starts when this one was *scheduled* to end, not "now", so a
-    // late update() (e.g. during an OLED refresh) doesn't stretch the tempo.
+    // late update() doesn't stretch the tempo.
     // If we fell more than a whole note behind, resync to now instead.
     unsigned long nextStartMs = melodyNoteStartMs + melodyNoteMs;
     if (now - nextStartMs > melodyNoteMs) {
@@ -197,22 +187,15 @@ void showAudioLightShow() {
 
 void initStrip() {
     strip.begin();
-    // 25 LEDs at full brightness can pull ~1.5 A - keep this modest until
-    // the power budget for the light strip is confirmed.
     strip.setBrightness(80); // 0-255
     strip.clear();
     strip.show();
     initAudioLightShowColors();
 }
 
-// Looks for the OLED and starts it if found. Quiet on failure so it can be
-// retried from showOledStatus() - lets the OLED be plugged in after boot.
 bool connectOled() {
     lastOledProbeMs = millis();
 
-    // display.begin() reports success even with no OLED attached, so check
-    // that something actually ACKs first - otherwise every showOledStatus()
-    // call floods Serial with i2cWrite() errors.
     uint8_t addr = 0;
     for (uint8_t candidate : OLED_I2C_ADDRS) {
         Wire.beginTransmission(candidate);
