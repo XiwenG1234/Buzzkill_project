@@ -25,7 +25,8 @@ enum class SoundEffect {
     STARTUP,
     MODE_CHANGE,
     TURN_SIGNAL_TICK,
-    ERROR
+    ERROR,
+    GUNSHOT // synthesized "bang + falling whine"; pauses background music while it plays
 };
 
 // Drive direction shown as an arrow on the light strip.
