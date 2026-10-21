@@ -175,6 +175,75 @@ void serviceMelody() {
     }
     startMelodyNote(nextStartMs);
 }
+
+// --- Gunshot sound effect (synthesized, serviced by update()) ---
+// The PAM8904 can only output a square wave, so a gunshot is faked with:
+//   1. "bang": a short burst of random frequencies, which sounds like noise
+//   2. "tail": a fast downward frequency sweep with random jitter
+// Volume can't be set directly, so the tail fades out by narrowing the
+// square wave's duty cycle (50% = loudest).
+constexpr unsigned long GUNSHOT_BANG_MS = 25;
+constexpr unsigned long GUNSHOT_TAIL_MS = 150;
+constexpr unsigned long GUNSHOT_TOTAL_MS = GUNSHOT_BANG_MS + GUNSHOT_TAIL_MS;
+constexpr int GUNSHOT_BANG_MIN_HZ = 1500;
+constexpr int GUNSHOT_BANG_MAX_HZ = 4500;
+constexpr int GUNSHOT_TAIL_START_HZ = 2500;
+constexpr int GUNSHOT_TAIL_END_HZ = 200;
+constexpr int GUNSHOT_JITTER_PCT = 25;          // random +/- % on the tail; 0 = clean laser "pew"
+constexpr unsigned long GUNSHOT_STEP_MS = 2;    // pick a new frequency this often
+
+// Duty values are 10-bit: ledcWriteTone() always switches the pin to 10-bit
+// resolution. 512 = 50% = loudest; smaller = quieter.
+constexpr int TONE_DUTY_MAX = 512;
+constexpr int GUNSHOT_END_DUTY = 40;
+
+bool gunshotActive = false;
+unsigned long gunshotStartMs = 0;
+unsigned long gunshotLastStepMs = 0;
+
+// Tone at freqHz with a given 10-bit duty (see TONE_DUTY_MAX).
+void writeToneDuty(int freqHz, int duty) {
+    ledcWriteTone(PIN_AMP_IN, freqHz);
+    ledcWrite(PIN_AMP_IN, duty);
+}
+
+void startGunshot() {
+    gunshotActive = true;
+    gunshotStartMs = millis();
+    gunshotLastStepMs = gunshotStartMs - GUNSHOT_STEP_MS; // first step runs right away
+}
+
+void serviceGunshot() {
+    if (!gunshotActive) return;
+    unsigned long now = millis();
+    unsigned long elapsed = now - gunshotStartMs;
+
+    if (elapsed >= GUNSHOT_TOTAL_MS) {
+        gunshotActive = false;
+        ledcWriteTone(PIN_AMP_IN, 0);
+        // Resume background music (restarts the note it was paused on).
+        if (melody != nullptr) {
+            startMelodyNote(now);
+        }
+        return;
+    }
+
+    if (now - gunshotLastStepMs < GUNSHOT_STEP_MS) return;
+    gunshotLastStepMs = now;
+
+    if (elapsed < GUNSHOT_BANG_MS) {
+        writeToneDuty(random(GUNSHOT_BANG_MIN_HZ, GUNSHOT_BANG_MAX_HZ + 1), TONE_DUTY_MAX);
+        return;
+    }
+
+    // Tail: exponential sweep (sounds even to the ear) from start to end Hz.
+    float t = (float)(elapsed - GUNSHOT_BANG_MS) / GUNSHOT_TAIL_MS; // 0 -> 1
+    int hz = GUNSHOT_TAIL_START_HZ *
+             powf((float)GUNSHOT_TAIL_END_HZ / GUNSHOT_TAIL_START_HZ, t);
+    hz += hz * random(-GUNSHOT_JITTER_PCT, GUNSHOT_JITTER_PCT + 1) / 100;
+    int duty = TONE_DUTY_MAX + (GUNSHOT_END_DUTY - TONE_DUTY_MAX) * t;
+    writeToneDuty(hz, duty);
+}
 constexpr int numTestTones = sizeof(testTones) / sizeof(testTones[0]);
 
 void initAudioLightShowColors() {
@@ -272,7 +341,12 @@ void update() {
         }
     }
 
-    serviceMelody();
+    // A sound effect takes over the speaker; the melody resumes after it.
+    if (gunshotActive) {
+        serviceGunshot();
+    } else {
+        serviceMelody();
+    }
 
     // TODO: service turn-signal blink timing
 }
@@ -424,11 +498,20 @@ void stopBackgroundMusic() {
 
 void playSoundEffect(SoundEffect effect) {
     soundEffectDurationMs = 400; // TODO: tune per effect once real audio is wired up
+    switch (effect) {
+    case SoundEffect::GUNSHOT:
+        soundEffectDurationMs = GUNSHOT_TOTAL_MS;
+        startGunshot();
+        break;
+    default:
+        // TODO: implement the other sound effects
+        break;
+    }
     showAudioLightShow();
-    // TODO: implement sound effect playback, dispatch on `effect`
 }
 
 void stopAudio() {
+    gunshotActive = false;
     stopMelody();
     clearLightStrip();
     soundEffectDurationMs = 0;

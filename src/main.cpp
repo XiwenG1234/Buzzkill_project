@@ -9,7 +9,7 @@
 // into separate files. Power is hardware-only (feeds Motion + ESP32
 // directly) and has no dedicated software module.
 // TODO: split Motion/Wireless into their own files once their scope is final.
-
+// "pio device monitor" to view serial output from the ESP32-C6-DevKitM-1
 #include "Arduino.h"
 #include "Sensing.h"
 #include "AudioVisual.h"
@@ -106,6 +106,14 @@ void loop() {
     Control::update();
     Motion::update();
     AudioVisual::update();
+
+    // Test: send "0" from the serial monitor to fire the gunshot effect once.
+    while (Serial.available()) {
+        if (Serial.read() == '0') {
+            Serial.println("Gunshot!");
+            AudioVisual::playSoundEffect(AudioVisual::SoundEffect::GUNSHOT);
+        }
+    }
     // No delay() in loop() - it would stall the background music.
 }
 
